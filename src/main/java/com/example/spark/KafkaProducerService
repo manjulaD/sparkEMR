@@ -1,0 +1,120 @@
+package com.spark;
+
+import com.fasterxml.jackson.annotation.*;
+import com.fasterxml.jackson.core.*;
+import com.fasterxml.jackson.databind.*;
+import com.google.gson.*;
+import com.optum.tic.avro.contracts.*;
+import org.apache.spark.sql.*;
+import org.apache.spark.sql.streaming.*;
+import org.apache.spark.sql.types.*;
+
+import javax.annotation.*;
+import java.sql.*;
+import java.util.*;
+import java.util.concurrent.*;
+
+
+public class KafkaProducerService {
+    public void sendMessagesToKafka() throws TimeoutException, StreamingQueryException, SQLException, JsonProcessingException {
+
+      Properties properties = new Properties();
+        properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        KafkaProducer<String, String> kafkaProducer = new KafkaProducer<String, String>(properties);
+
+        String bootStrapServer3 = "";
+        Properties properties = new Properties();
+        properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootStrapServer3);
+        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+
+        properties.setProperty("security.protocol", "SASL_SSL");
+        properties.setProperty("ssl.enabled.protocols", "TLSv1.2,TLSv1.1,TLSv1");
+        properties.setProperty("sasl.mechanism", "PLAIN");
+        properties.setProperty("sasl.jaas.config", "org.apache.kafka.common.security.plain.PlainLoginModule required username=admin password=Dh6vF67mb3sQfZ;");
+
+        KafkaProducer<String, String> kafkaProducer = new KafkaProducer<String, String>(properties);
+
+        ObjectMapper om = new ObjectMapper();
+        om.enable(SerializationFeature.INDENT_OUTPUT);
+        om.addMixIn(Contracts.class, IgnoreSchemaProperty.class);
+
+        SparkSession spark = SparkSession.builder()
+                .appName("Java Spark SQL Data")
+                .config("spark.master", "local[5]")
+                .getOrCreate();
+
+        String url = "*****";
+        String table = "(SELECT * FROM ABC WHERE TYPE=\"H\" date > '03/01/2022') temp";
+
+        Dataset<Row> df = spark.read()
+                .format("jdbc")
+                .option("url", url)
+                .option("dbtable", table)
+                .option("user", "****")
+                .option("password", "*****")
+                .option("numPartitions", "100")
+                .option("fetchsize", "100000")
+                .load();
+        System.out.println("loaded");
+        df.show();
+
+        Dataset<Row> npiDF = spark.read()
+                .format("jdbc")
+                .option("url", url)
+                .option("dbtable")
+                .option("user", "admin1")
+                .option("password", "Cpm7wMyNM8vR")
+                .option("numPartitions", "100")
+                .option("fetchsize", "100000")
+                .load();
+
+        long start = System.currentTimeMillis();
+        for (Iterator<Row> iter = df.toLocalIterator(); iter.hasNext(); ) {
+            String item = (iter.next()).toString();
+            String[] fields = item.split(",");
+            for (int i = 0; i < fields.length; i++) {
+                System.out.print(i + ": " + fields[i] + ", ");
+            }
+            System.out.println();
+            Pojo obj = new CreatePojoObj().createObjObj(fields);
+            Gson gson = new Gson();
+            String gsonString = gson.toJson(obj);
+            System.out.println(gsonString);
+            sendContractsToKafka(gsonString, kafkaProducer);
+        }
+        //long end = System.currentTimeMillis();
+        //System.out.println(((end-start)/1000)+" seconds");
+    }
+
+
+    private StructType getSchema() {
+        StructType schema = new StructType(new StructField[]{
+                new StructField("id", DataTypes.StringType, false, Metadata.empty()),
+                new StructField("ab", DataTypes.DateType, false, Metadata.empty()),
+                new StructField("dc", DataTypes.BooleanType, false, Metadata.empty()),
+                new StructField("df", DataTypes.IntegerType, false, Metadata.empty()),
+        return schema;
+    }
+
+    private Properties properties() {
+        Properties prop = new Properties();
+        prop.put("user", "admin1");
+        prop.put("password", "Cpm7wMyNM8vR");
+        try {
+            Class.forName("com.mysql.jdbc.Driver");
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        return prop;
+    }
+
+
+    private void sendContractsToKafka(String line, KafkaProducer<String, String> kafkaProducer) {
+        ProducerRecord<String, String> record = new ProducerRecord<String, String>("pojo_topic", "key1", line);
+        kafkaProducer.send(record);
+    }
+}
+
